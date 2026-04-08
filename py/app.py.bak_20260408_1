@@ -1,0 +1,693 @@
+﻿import math
+from datetime import datetime, time
+
+import akshare as ak
+import pandas as pd
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
+
+
+APP_TITLE = "鏈熻揣澶嶇洏鎬荤粨"
+APP_CAPTION = "鏀剁洏鍚庢姄鍙栬鎯呬笌璧勮锛屼娇鐢ㄦ湰鍦拌鍒欒嚜鍔ㄧ敓鎴愭洿鍍忓鎴锋棩鎶ョ殑澶嶇洏鍐呭銆?
+DEFAULT_PRODUCT = "铻虹汗閽?
+
+
+FUTURE_CONFIG = {
+    "铻虹汗閽?: {"exchange": "涓婃湡鎵€", "main_symbol": "RB0", "inventory_symbol": "rb", "spot_symbol": "RB", "keywords": ["铻虹汗閽?, "閽㈡潗", "閽㈠巶", "榛戣壊绯?, "鍦颁骇", "鍩哄缓"]},
+    "鐑嵎": {"exchange": "涓婃湡鎵€", "main_symbol": "HC0", "inventory_symbol": "hc", "spot_symbol": "HC", "keywords": ["鐑嵎", "鍗锋澘", "閽㈡潗", "鍒堕€犱笟", "榛戣壊绯?]},
+    "娌摐": {"exchange": "涓婃湡鎵€", "main_symbol": "CU0", "inventory_symbol": "cu", "spot_symbol": "CU", "keywords": ["閾?, "鏈夎壊", "鐢电綉", "鏂拌兘婧?, "鍐剁偧"]},
+    "娌摑": {"exchange": "涓婃湡鎵€", "main_symbol": "AL0", "inventory_symbol": "al", "spot_symbol": "AL", "keywords": ["閾?, "姘у寲閾?, "鐢佃В閾?, "鏈夎壊", "鐢靛姏"]},
+    "娌攲": {"exchange": "涓婃湡鎵€", "main_symbol": "ZN0", "inventory_symbol": "zn", "spot_symbol": "ZN", "keywords": ["閿?, "鏈夎壊", "闀€閿?, "鍩哄缓"]},
+    "娌晬": {"exchange": "涓婃湡鎵€", "main_symbol": "NI0", "inventory_symbol": "ni", "spot_symbol": "NI", "keywords": ["闀?, "涓嶉攬閽?, "鏂拌兘婧?, "鍗板凹"]},
+    "娌噾": {"exchange": "涓婃湡鎵€", "main_symbol": "AU0", "inventory_symbol": "au", "spot_symbol": "AU", "keywords": ["榛勯噾", "閲戜环", "缇庤仈鍌?, "閬块櫓", "缇庡厓", "鍦扮紭"]},
+    "娌摱": {"exchange": "涓婃湡鎵€", "main_symbol": "AG0", "inventory_symbol": "AG", "spot_symbol": "AG", "keywords": ["鐧介摱", "璐甸噾灞?, "缇庤仈鍌?, "閬块櫓", "缇庡厓"]},
+    "鍘熸补": {"exchange": "涓婃捣鍥介檯鑳芥簮浜ゆ槗涓績", "main_symbol": "SC0", "inventory_symbol": None, "spot_symbol": None, "keywords": ["鍘熸补", "OPEC", "涓笢", "娌逛环", "鑳芥簮"]},
+    "娌ラ潚": {"exchange": "涓婃湡鎵€", "main_symbol": "BU0", "inventory_symbol": "bu", "spot_symbol": "BU", "keywords": ["娌ラ潚", "鍘熸补", "鍩哄缓", "鐐煎巶"]},
+    "鐕冩补": {"exchange": "涓婃湡鎵€", "main_symbol": "FU0", "inventory_symbol": "fu", "spot_symbol": "FU", "keywords": ["鐕冩补", "鍘熸补", "鑳芥簮", "鐐煎巶"]},
+    "姗¤兌": {"exchange": "涓婃湡鎵€", "main_symbol": "RU0", "inventory_symbol": "ru", "spot_symbol": "RU", "keywords": ["姗¤兌", "杞儙", "姹借溅", "涓滃崡浜?]},
+    "绾告祮": {"exchange": "涓婃湡鎵€", "main_symbol": "SP0", "inventory_symbol": "sp", "spot_symbol": "SP", "keywords": ["绾告祮", "閫犵焊", "绾镐环", "鏈ㄦ祮"]},
+    "绾⒈": {"exchange": "閮戝晢鎵€", "main_symbol": "SA0", "inventory_symbol": "SA", "spot_symbol": "SA", "keywords": ["绾⒈", "鐜荤拑", "鍏変紡", "閲嶇⒈", "杞荤⒈"]},
+    "鐜荤拑": {"exchange": "閮戝晢鎵€", "main_symbol": "FG0", "inventory_symbol": "FG", "spot_symbol": "FG", "keywords": ["鐜荤拑", "鍦颁骇", "鍏変紡", "娣卞姞宸?]},
+    "鐢查唶": {"exchange": "閮戝晢鎵€", "main_symbol": "MA0", "inventory_symbol": "MA", "spot_symbol": "MA", "keywords": ["鐢查唶", "鐓ゅ寲宸?, "鐑儍", "娓彛"]},
+    "PTA": {"exchange": "閮戝晢鎵€", "main_symbol": "TA0", "inventory_symbol": "TA", "spot_symbol": "TA", "keywords": ["PTA", "鑱氶叝", "鍘熸补", "PX", "绾虹粐"]},
+    "灏跨礌": {"exchange": "閮戝晢鎵€", "main_symbol": "UR0", "inventory_symbol": "UR", "spot_symbol": "UR", "keywords": ["灏跨礌", "鍖栬偉", "鍐滀笟", "鐓ゅ寲宸?]},
+    "鐧界硸": {"exchange": "閮戝晢鎵€", "main_symbol": "SR0", "inventory_symbol": "SR", "spot_symbol": "SR", "keywords": ["鐧界硸", "鐢樿敆", "宸磋タ", "鍗板害", "椋熺硸"]},
+    "妫夎姳": {"exchange": "閮戝晢鎵€", "main_symbol": "CF0", "inventory_symbol": "CF", "spot_symbol": "CF", "keywords": ["妫夎姳", "绾虹粐", "鏈嶈", "绉嶆"]},
+    "鑻规灉": {"exchange": "閮戝晢鎵€", "main_symbol": "AP0", "inventory_symbol": "AP", "spot_symbol": "AP", "keywords": ["鑻规灉", "鍐峰簱", "鍐滀笟", "姘存灉"]},
+    "璞嗕竴": {"exchange": "澶у晢鎵€", "main_symbol": "A0", "inventory_symbol": "a", "spot_symbol": "A", "keywords": ["璞嗕竴", "澶ц眴", "鍐滀笟", "杩涘彛", "鍘嬫Θ"]},
+    "璞嗙矔": {"exchange": "澶у晢鎵€", "main_symbol": "M0", "inventory_symbol": "m", "spot_symbol": "M", "keywords": ["璞嗙矔", "楗叉枡", "鍏绘畺", "澶ц眴", "鍘嬫Θ"]},
+    "璞嗘补": {"exchange": "澶у晢鎵€", "main_symbol": "Y0", "inventory_symbol": "y", "spot_symbol": "Y", "keywords": ["璞嗘补", "娌硅剛", "鍘嬫Θ", "澶ц眴"]},
+    "妫曟娌?: {"exchange": "澶у晢鎵€", "main_symbol": "P0", "inventory_symbol": "p", "spot_symbol": "P", "keywords": ["妫曟娌?, "娌硅剛", "椹潵瑗夸簹", "鍗板凹"]},
+    "鐜夌背": {"exchange": "澶у晢鎵€", "main_symbol": "C0", "inventory_symbol": "c", "spot_symbol": "C", "keywords": ["鐜夌背", "楗叉枡", "娣卞姞宸?, "鍐滀笟"]},
+    "閾佺熆鐭?: {"exchange": "澶у晢鎵€", "main_symbol": "I0", "inventory_symbol": "i", "spot_symbol": "I", "keywords": ["閾佺熆鐭?, "鐭垮北", "閽㈠巶", "榛戣壊绯?]},
+    "鐒︾偔": {"exchange": "澶у晢鎵€", "main_symbol": "J0", "inventory_symbol": "j", "spot_symbol": "J", "keywords": ["鐒︾偔", "鐓ょ劍", "閽㈠巶", "榛戣壊绯?]},
+    "鐒︾叅": {"exchange": "澶у晢鎵€", "main_symbol": "JM0", "inventory_symbol": "jm", "spot_symbol": "JM", "keywords": ["鐒︾叅", "鐓ょ熆", "鐓ょ劍", "榛戣壊绯?]},
+    "鑱氫笝鐑?: {"exchange": "澶у晢鎵€", "main_symbol": "PP0", "inventory_symbol": "pp", "spot_symbol": "PP", "keywords": ["鑱氫笝鐑?, "鍖栧伐", "濉戞枡", "鍘熸补"]},
+    "PVC": {"exchange": "澶у晢鎵€", "main_symbol": "V0", "inventory_symbol": "v", "spot_symbol": "V", "keywords": ["PVC", "鍖栧伐", "鍦颁骇", "鐢电煶"]},
+    "涔欎簩閱?: {"exchange": "澶у晢鎵€", "main_symbol": "EG0", "inventory_symbol": "eg", "spot_symbol": "EG", "keywords": ["涔欎簩閱?, "鍖栧伐", "鑱氶叝", "鍘熸补"]},
+    "鐢熺尓": {"exchange": "澶у晢鎵€", "main_symbol": "LH0", "inventory_symbol": "lh", "spot_symbol": "LH", "keywords": ["鐢熺尓", "鍏绘畺", "鐚环", "楗叉枡"]},
+    "娌繁300鑲℃寚": {"exchange": "涓噾鎵€", "main_symbol": "IF0", "inventory_symbol": "IF", "spot_symbol": None, "keywords": ["鑲℃寚", "娌繁300", "A鑲?, "鏀跨瓥", "娴佸姩鎬?]},
+    "涓瘉500鑲℃寚": {"exchange": "涓噾鎵€", "main_symbol": "IC0", "inventory_symbol": "IC", "spot_symbol": None, "keywords": ["鑲℃寚", "涓瘉500", "A鑲?, "鏀跨瓥", "娴佸姩鎬?]},
+    "涓瘉1000鑲℃寚": {"exchange": "涓噾鎵€", "main_symbol": "IM0", "inventory_symbol": "IM", "spot_symbol": None, "keywords": ["鑲℃寚", "涓瘉1000", "A鑲?, "鏀跨瓥", "娴佸姩鎬?]},
+    "10骞存湡鍥藉€?: {"exchange": "涓噾鎵€", "main_symbol": "T0", "inventory_symbol": "T", "spot_symbol": None, "keywords": ["鍥藉€?, "鍒╃巼", "澶", "鍊哄埜", "娴佸姩鎬?]},
+    "宸ヤ笟纭?: {"exchange": "骞挎湡鎵€", "main_symbol": "SI0", "inventory_symbol": "si", "spot_symbol": "SI", "keywords": ["宸ヤ笟纭?, "鏈夋満纭?, "澶氭櫠纭?, "鍏変紡"]},
+}
+
+
+def init_page():
+    st.set_page_config(page_title=APP_TITLE, layout="wide")
+    st.title(APP_TITLE)
+    st.caption(APP_CAPTION)
+
+
+def init_state():
+    defaults = {
+        "selected_product": DEFAULT_PRODUCT,
+        "technical_text": "",
+        "fundamental_text": "",
+        "strategy_text": "",
+        "report_text": "",
+        "analysis_context": None,
+        "last_auto_fetch_date": None,
+        "last_refresh_ts": 0.0,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return math.nan
+
+
+def format_number(value, digits=2):
+    if pd.isna(value):
+        return "鏆傛棤"
+    return f"{float(value):.{digits}f}"
+
+
+def calculate_macd(series):
+    ema12 = series.ewm(span=12, adjust=False).mean()
+    ema26 = series.ewm(span=26, adjust=False).mean()
+    dif = ema12 - ema26
+    dea = dif.ewm(span=9, adjust=False).mean()
+    macd = (dif - dea) * 2
+    return dif, dea, macd
+
+
+def resample_weekly(df):
+    return (
+        df.set_index("date")
+        .resample("W-FRI")
+        .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "hold": "last", "settle": "last"})
+        .dropna(subset=["close"])
+        .reset_index()
+    )
+
+
+def enrich_indicators(df):
+    enriched = df.copy()
+    for window in (5, 20, 60, 250):
+        enriched[f"ma{window}"] = enriched["close"].rolling(window).mean()
+    dif, dea, macd = calculate_macd(enriched["close"])
+    enriched["dif"] = dif
+    enriched["dea"] = dea
+    enriched["macd"] = macd
+    return enriched
+
+
+def get_snapshot_market(config):
+    return "FF" if config["exchange"] == "涓噾鎵€" else "CF"
+
+
+@st.cache_data(ttl=120)
+def load_fast_snapshot(main_symbol, market):
+    snapshot_df = ak.futures_zh_spot(symbol=main_symbol, market=market, adjust="0")
+    if snapshot_df.empty:
+        return None
+    return snapshot_df.iloc[0].to_dict()
+
+
+def append_snapshot_row_if_needed(df, config):
+    now = datetime.now()
+    today = pd.Timestamp(now.date())
+    latest_date = pd.Timestamp(df["date"].max())
+
+    if now.time() < time(15, 0):
+        return df, {"data_source": "鏃ョ嚎", "snapshot_time": None}
+
+    if latest_date >= today:
+        return df, {"data_source": "鏃ョ嚎", "snapshot_time": None}
+
+    try:
+        snapshot = load_fast_snapshot(config["main_symbol"], get_snapshot_market(config))
+        if not snapshot:
+            return df, {"data_source": "鏃ョ嚎", "snapshot_time": None}
+
+        snapshot_row = {
+            "date": today,
+            "open": pd.to_numeric(snapshot.get("open"), errors="coerce"),
+            "high": pd.to_numeric(snapshot.get("high"), errors="coerce"),
+            "low": pd.to_numeric(snapshot.get("low"), errors="coerce"),
+            "close": pd.to_numeric(snapshot.get("current_price"), errors="coerce"),
+            "volume": pd.to_numeric(snapshot.get("volume"), errors="coerce"),
+            "hold": pd.to_numeric(snapshot.get("hold"), errors="coerce"),
+            "settle": pd.to_numeric(snapshot.get("last_settle_price"), errors="coerce"),
+        }
+        if pd.isna(snapshot_row["settle"]):
+            snapshot_row["settle"] = snapshot_row["close"]
+
+        patched_df = pd.concat([df, pd.DataFrame([snapshot_row])], ignore_index=True)
+        return patched_df, {
+            "data_source": "鏀剁洏蹇収琛ュ叏",
+            "snapshot_time": str(snapshot.get("time", "")),
+        }
+    except Exception:
+        return df, {"data_source": "鏃ョ嚎", "snapshot_time": None}
+
+
+@st.cache_data(ttl=180)
+def load_daily_data(main_symbol):
+    df = ak.futures_zh_daily_sina(symbol=main_symbol)
+    df["date"] = pd.to_datetime(df["date"])
+    for column in ["open", "high", "low", "close", "volume", "hold", "settle"]:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+    return df.dropna(subset=["close"]).sort_values("date").reset_index(drop=True)
+
+
+@st.cache_data(ttl=1800)
+def load_inventory_data(inventory_symbol):
+    if not inventory_symbol:
+        return None
+    return ak.futures_inventory_em(symbol=inventory_symbol)
+
+
+@st.cache_data(ttl=180)
+def load_news_data():
+    return ak.stock_info_global_cls(symbol="鍏ㄩ儴")
+
+
+@st.cache_data(ttl=180)
+def load_basis_data(trade_date, spot_symbol):
+    if not spot_symbol:
+        return None
+    return ak.futures_spot_price(date=trade_date, vars_list=[spot_symbol])
+
+
+def describe_price_structure(latest):
+    if latest["close"] > latest["ma5"] > latest["ma20"] > latest["ma60"]:
+        return "鍧囩嚎鍛堝澶存帓鍒楋紝鐭腑鏈熻秼鍔垮亸寮恒€?
+    if latest["close"] < latest["ma5"] < latest["ma20"] < latest["ma60"]:
+        return "鍧囩嚎鍛堢┖澶存帓鍒楋紝鐭腑鏈熻秼鍔垮亸寮便€?
+    if latest["close"] > latest["ma20"] and latest["ma20"] > latest["ma60"]:
+        return "浠锋牸浣嶄簬涓湡鍧囩嚎涓婃柟锛岀粨鏋勫亸寮猴紝浣嗗欢缁€т粛闇€纭銆?
+    if latest["close"] < latest["ma20"] and latest["ma20"] < latest["ma60"]:
+        return "浠锋牸浣嶄簬涓湡鍧囩嚎涓嬫柟锛岀粨鏋勫亸寮憋紝浣嗛渶闃叉瓒呰穼鍙嶅脊銆?
+    if pd.notna(latest["ma250"]) and latest["close"] > latest["ma250"]:
+        return "鐭嚎鍙嶅锛屼絾闀挎湡浠嶄綅浜庡勾绾夸箣涓娿€?
+    if pd.notna(latest["ma250"]) and latest["close"] < latest["ma250"]:
+        return "鐭嚎鍙嶅锛岄暱鏈熶粛浣嶄簬骞寸嚎涔嬩笅銆?
+    return "鍧囩嚎缂犵粫鏄庢樉锛岃秼鍔夸俊鍙锋殏涓嶆竻鏅般€?
+
+
+def describe_macd(latest, previous):
+    if latest["dif"] > latest["dea"] and previous["dif"] <= previous["dea"]:
+        return "MACD 鍒氬舰鎴愰噾鍙夛紝鍔ㄨ兘鏈夎浆寮鸿抗璞°€?
+    if latest["dif"] < latest["dea"] and previous["dif"] >= previous["dea"]:
+        return "MACD 鍒氬舰鎴愭鍙夛紝鍔ㄨ兘鏈夎浆寮辫抗璞°€?
+    return "MACD 浣嶄簬闆惰酱涓婃柟锛岃秼鍔垮姩鑳藉亸澶氥€? if latest["macd"] > 0 else "MACD 浣嶄簬闆惰酱涓嬫柟锛岃秼鍔垮姩鑳藉亸绌恒€?
+
+
+def describe_weekly_structure(weekly_df):
+    if len(weekly_df) < 2:
+        return "鍛ㄧ嚎鏍锋湰涓嶈冻锛屾殏涓嶅仛鍛ㄧ嚎鍒ゆ柇銆?
+    latest = weekly_df.iloc[-1]
+    previous = weekly_df.iloc[-2]
+    if latest["close"] > previous["high"]:
+        return "鍛ㄧ嚎鏀剁洏绐佺牬鍓嶄竴鍛ㄩ珮鐐癸紝涓湡鎵挎帴鍋忓己銆?
+    if latest["close"] < previous["low"]:
+        return "鍛ㄧ嚎鏀剁洏璺岀牬鍓嶄竴鍛ㄤ綆鐐癸紝涓湡鍘嬪姏杈冨ぇ銆?
+    if latest["close"] > latest["ma20"]:
+        return "鍛ㄧ嚎浣嶄簬20鍛ㄥ潎绾夸笂鏂癸紝涓湡缁撴瀯鍋忓己銆?
+    return "鍛ㄧ嚎浠嶅湪鏁寸悊鍖洪棿鍐咃紝鏂瑰悜闇€瑕佺户缁‘璁ゃ€?
+
+
+def build_technical_text(product_name, daily_df):
+    daily_df = enrich_indicators(daily_df)
+    weekly_df = enrich_indicators(resample_weekly(daily_df))
+    latest = daily_df.iloc[-1]
+    previous = daily_df.iloc[-2]
+    latest_week = weekly_df.iloc[-1] if not weekly_df.empty else None
+    change_pct = (latest["close"] - previous["close"]) / previous["close"] * 100
+    weekly_change_pct = None
+    if len(weekly_df) >= 2:
+        weekly_change_pct = (weekly_df.iloc[-1]["close"] - weekly_df.iloc[-2]["close"]) / weekly_df.iloc[-2]["close"] * 100
+    daily_body = abs(latest["close"] - latest["open"])
+    daily_range = latest["high"] - latest["low"]
+    candle_text = "鏃 褰㈡€佷腑鎬э紝鏂瑰悜灏氭湭瀹屽叏璧伴『銆?
+    if daily_range > 0 and daily_body / daily_range >= 0.6:
+        candle_text = "鏃 瀹炰綋杈冮暱锛屽綋鏃ユ柟鍚戞瘮杈冩槑纭€?
+    elif daily_range > 0 and daily_body / daily_range <= 0.25:
+        candle_text = "鏃 瀹炰綋杈冪煭锛屽绌哄垎姝ц緝澶с€?
+    technical_text = "\n".join([
+        f"鍝佺锛歿product_name}",
+        f"鏁版嵁鏃ユ湡锛歿latest['date'].strftime('%Y-%m-%d')}",
+        f"鏃ョ嚎鏀剁洏浠凤細{latest['close']:.2f}锛岃緝涓婁竴浜ゆ槗鏃ユ定璺屽箙锛歿change_pct:.2f}%",
+        f"鏃ョ嚎 MA5/20/60/250锛歿format_number(latest['ma5'])} / {format_number(latest['ma20'])} / {format_number(latest['ma60'])} / {format_number(latest['ma250'])}",
+        f"MACD(DIF/DEA/MACD)锛歿format_number(latest['dif'])} / {format_number(latest['dea'])} / {format_number(latest['macd'])}",
+        f"鏃 瑙傚療锛歿candle_text}",
+        f"鏃ョ嚎缁撴瀯锛歿describe_price_structure(latest)}",
+        f"鍔ㄨ兘鍒ゆ柇锛歿describe_macd(latest, previous)}",
+        f"鍛ㄧ嚎鍒ゆ柇锛歿describe_weekly_structure(weekly_df)}",
+        f"鏈懆娑ㄨ穼骞咃細{weekly_change_pct:.2f}%" if weekly_change_pct is not None else "鏈懆娑ㄨ穼骞咃細鍛ㄧ嚎鏍锋湰涓嶈冻",
+        f"鍛ㄧ嚎 MA5/20锛歿format_number(latest_week['ma5'])} / {format_number(latest_week['ma20'])}" if latest_week is not None else "鍛ㄧ嚎 MA5/20锛氭殏鏃?,
+    ])
+    latest_metrics = {
+        "date": latest["date"], "close": latest["close"], "open": latest["open"], "high": latest["high"], "low": latest["low"],
+        "change_pct": change_pct, "ma5": latest["ma5"], "ma20": latest["ma20"], "ma60": latest["ma60"], "ma250": latest["ma250"],
+        "dif": latest["dif"], "dea": latest["dea"], "macd": latest["macd"], "volume": latest["volume"], "hold": latest["hold"],
+        "settle": latest["settle"], "weekly_change_pct": weekly_change_pct,
+    }
+    return technical_text, latest_metrics
+
+
+def build_inventory_text(config):
+    symbol = config["inventory_symbol"]
+    if not symbol:
+        return "搴撳瓨锛氬綋鍓嶅搧绉嶆殏鏈厤缃簱瀛樻帴鍙ｃ€?, {"inventory_bias": "neutral", "inventory_note": "鏆傛棤搴撳瓨鏁版嵁鏀拺"}
+    try:
+        inventory_df = load_inventory_data(symbol)
+        if inventory_df is None or inventory_df.empty:
+            return "搴撳瓨锛氭湭鑾峰彇鍒板簱瀛樻暟鎹€?, {"inventory_bias": "neutral", "inventory_note": "搴撳瓨鏁版嵁缂哄け"}
+        latest = inventory_df.iloc[-1]
+        previous = inventory_df.iloc[-2] if len(inventory_df) >= 2 else latest
+        delta = safe_float(latest["澧炲噺"])
+        if pd.notna(delta) and delta < 0:
+            interpretation, bias = "搴撳瓨缁х画鍥炶惤锛屽鐩橀潰褰㈡垚涓€瀹氭敮鎾戙€?, "bullish"
+        elif pd.notna(delta) and delta > 0:
+            interpretation, bias = "搴撳瓨杈归檯澧炲姞锛屼緵缁欑鍘嬪姏鐣ユ湁鎶崌銆?, "bearish"
+        else:
+            interpretation, bias = "搴撳瓨鍙樺寲涓嶅ぇ锛屽簱瀛樼鏆傛湭鎻愪緵鏄庣‘鏂瑰悜銆?, "neutral"
+        text = "\n".join([
+            "搴撳瓨鏁版嵁锛?,
+            f"鏈€鏂版棩鏈燂細{latest['鏃ユ湡']}",
+            f"鏈€鏂板簱瀛橈細{format_number(latest['搴撳瓨'], 0)}",
+            f"杈冧笂涓€鏈熷鍑忥細{format_number(latest['澧炲噺'], 0)}",
+            f"搴撳瓨瑙ｈ锛歿interpretation}",
+            f"涓婁竴鏈熷簱瀛橈細{format_number(previous['搴撳瓨'], 0)}",
+        ])
+        return text, {"inventory_bias": bias, "inventory_note": interpretation}
+    except Exception as exc:
+        return f"搴撳瓨鏁版嵁锛氳幏鍙栧け璐ワ紝鍘熷洜锛歿exc}", {"inventory_bias": "neutral", "inventory_note": "搴撳瓨鎶撳彇澶辫触"}
+
+
+def build_basis_text(config, trade_date):
+    spot_symbol = config["spot_symbol"]
+    if not spot_symbol:
+        return "鏈熺幇涓庝骇涓氶摼锛氬綋鍓嶅搧绉嶆殏鏈厤缃幇璐?鍩哄樊鎺ュ彛銆?, {"basis_bias": "neutral", "basis_note": "鏆傛棤鍩哄樊缁撴瀯鍒ゆ柇"}
+    try:
+        basis_df = load_basis_data(trade_date.strftime("%Y%m%d"), spot_symbol)
+        if basis_df is None or basis_df.empty:
+            return "鏈熺幇涓庝骇涓氶摼锛氭湭鑾峰彇鍒扮幇璐у拰鍩哄樊鏁版嵁銆?, {"basis_bias": "neutral", "basis_note": "鍩哄樊鏁版嵁缂哄け"}
+        latest = basis_df.iloc[0]
+        dom_basis = safe_float(latest["dom_basis"])
+        dom_basis_rate = safe_float(latest["dom_basis_rate"])
+        if pd.notna(dom_basis) and dom_basis > 0:
+            interpretation, bias = "涓诲姏鍚堢害缁存寔鍗囨按缁撴瀯锛岃繙鏈堥鏈熺浉瀵瑰亸寮恒€?, "bullish"
+        elif pd.notna(dom_basis) and dom_basis < 0:
+            interpretation, bias = "涓诲姏鍚堢害缁存寔璐存按缁撴瀯锛岀幇璐х鐩稿鏇村己銆?, "bearish"
+        else:
+            interpretation, bias = "鏈熺幇鍩哄樊鏁翠綋涓€э紝鏈舰鎴愭槑鏄炬柟鍚戝紩瀵笺€?, "neutral"
+        text = "\n".join([
+            "鏈熺幇涓庝骇涓氶摼浠ｇ悊鎸囨爣锛?,
+            f"鐜拌揣浠锋牸锛歿format_number(latest['spot_price'])}",
+            f"涓诲姏鍚堢害锛歿latest['dominant_contract']}锛屼富鍔涗环鏍硷細{format_number(latest['dominant_contract_price'])}",
+            f"涓诲姏鍩哄樊锛歿format_number(dom_basis)}锛屽熀宸巼锛歿format_number(dom_basis_rate * 100 if pd.notna(dom_basis_rate) else math.nan)}%",
+            f"瑙ｈ锛歿interpretation}",
+        ])
+        return text, {"basis_bias": bias, "basis_note": interpretation}
+    except Exception as exc:
+        return f"鏈熺幇涓庝骇涓氶摼锛氳幏鍙栧け璐ワ紝鍘熷洜锛歿exc}", {"basis_bias": "neutral", "basis_note": "鍩哄樊鎶撳彇澶辫触"}
+
+
+def classify_news_sentiment(text_blob):
+    bullish_words = ["鎻愭尟", "鍑忎骇", "鍘诲簱", "鏀拺", "绱у紶", "涓婃定", "鏀瑰杽"]
+    bearish_words = ["鍥炶惤", "璧板急", "澧炰骇", "绱簱", "涓嬭穼", "鍘嬪埗", "鐤插急"]
+    bullish_score = sum(word in text_blob for word in bullish_words)
+    bearish_score = sum(word in text_blob for word in bearish_words)
+    if bullish_score > bearish_score:
+        return "bullish", "鐩稿叧鏂伴椈瀵圭洏闈㈡儏缁亸姝ｉ潰锛屼絾浠嶉渶瑙傚療鍏舵槸鍚︽寔缁紶瀵煎埌渚涢渶绔€?
+    if bearish_score > bullish_score:
+        return "bearish", "鐩稿叧鏂伴椈瀵圭洏闈㈡儏缁亸璐熼潰锛岀煭绾块渶闃茶寖鎯呯华缁х画鍙戦叺銆?
+    return "neutral", "娑堟伅闈㈠鐩橀潰褰卞搷鍋忎腑鎬э紝鐭嚎浠嶉渶鏇村璺熻釜楠岃瘉銆?
+
+
+def build_news_text(config):
+    try:
+        news_df = load_news_data()
+        if news_df.empty:
+            return "娑堟伅闈細鏈幏鍙栧埌璐㈣仈绀剧數鎶ャ€?, {"news_bias": "neutral", "news_note": "娑堟伅闈㈡殏缂?}
+        rows = []
+        for _, row in news_df.head(200).iterrows():
+            haystack = f"{row['鏍囬']} {row['鍐呭']}"
+            if any(keyword in haystack for keyword in config["keywords"]):
+                rows.append(row)
+            if len(rows) >= 5:
+                break
+        if not rows:
+            return "娑堟伅闈細褰撴棩鏈瓫鍒伴珮搴︾浉鍏宠祫璁紝寤鸿缁撳悎浜т笟璧勮鍋氫汉宸ヨˉ鍏呫€?, {"news_bias": "neutral", "news_note": "娑堟伅闈㈡殏鏃犻珮鐩稿叧浜嬩欢"}
+        lines = ["璐㈣仈绀剧浉鍏虫柊闂伙細"]
+        text_blob = ""
+        for row in rows:
+            lines.append(f"- {row['鍙戝竷鏃ユ湡']} {row['鍙戝竷鏃堕棿']} | {row['鏍囬']}")
+            text_blob += f"{row['鏍囬']} {row['鍐呭']} "
+        news_bias, conclusion = classify_news_sentiment(text_blob)
+        lines.append(f"娑堟伅瑙ｈ锛歿conclusion}")
+        return "\n".join(lines), {"news_bias": news_bias, "news_note": conclusion}
+    except Exception as exc:
+        return f"娑堟伅闈細璐㈣仈绀炬柊闂昏幏鍙栧け璐ワ紝鍘熷洜锛歿exc}", {"news_bias": "neutral", "news_note": "娑堟伅鎶撳彇澶辫触"}
+
+
+def build_fundamental_text(product_name, config, latest_metrics):
+    inventory_text, inventory_signal = build_inventory_text(config)
+    basis_text, basis_signal = build_basis_text(config, latest_metrics["date"])
+    news_text, news_signal = build_news_text(config)
+    text = "\n\n".join([
+        f"鍝佺锛歿product_name}",
+        f"浜ゆ槗鎵€锛歿config['exchange']}",
+        "\n".join(["琛屾儏姒傚喌锛?, f"鏀剁洏浠凤細{latest_metrics['close']:.2f}", f"缁撶畻浠凤細{format_number(latest_metrics['settle'])}", f"鎴愪氦閲忥細{format_number(latest_metrics['volume'], 0)}", f"鎸佷粨閲忥細{format_number(latest_metrics['hold'], 0)}"]),
+        inventory_text,
+        basis_text,
+        news_text,
+    ])
+    signals = {}
+    signals.update(inventory_signal)
+    signals.update(basis_signal)
+    signals.update(news_signal)
+    return text, signals
+
+
+def evaluate_market_state(latest_metrics, signals):
+    score = 0
+    reasons = []
+    checks = [
+        (latest_metrics["close"] > latest_metrics["ma20"], "浠锋牸杩愯浜?MA20 涓婃柟", "浠锋牸杩愯浜?MA20 涓嬫柟"),
+        (latest_metrics["close"] > latest_metrics["ma60"], "浠锋牸杩愯浜?MA60 涓婃柟", "浠锋牸杩愯浜?MA60 涓嬫柟"),
+        (latest_metrics["ma20"] > latest_metrics["ma60"], "涓湡鍧囩嚎缁撴瀯鍋忓己", "涓湡鍧囩嚎缁撴瀯鍋忓急"),
+        (latest_metrics["macd"] > 0, "MACD 浣嶄簬闆惰酱涓婃柟", "MACD 浣嶄簬闆惰酱涓嬫柟"),
+    ]
+    for condition, pos_text, neg_text in checks:
+        score += 1 if condition else -1
+        reasons.append(pos_text if condition else neg_text)
+    for key, pos_text, neg_text in [
+        ("inventory_bias", "搴撳瓨绔浠锋牸褰㈡垚鏀拺", "搴撳瓨绔浠锋牸褰㈡垚鍘嬪埗"),
+        ("basis_bias", "鏈熺幇缁撴瀯鍋忓己", "鏈熺幇缁撴瀯鍋忓急"),
+        ("news_bias", "娑堟伅鎯呯华鍋忔闈?, "娑堟伅鎯呯华鍋忚礋闈?),
+    ]:
+        if signals.get(key) == "bullish":
+            score += 1
+            reasons.append(pos_text)
+        elif signals.get(key) == "bearish":
+            score -= 1
+            reasons.append(neg_text)
+    if score >= 4:
+        bias, confidence = "鍋忓", "杈冨己"
+    elif score >= 1:
+        bias, confidence = "鍋忓", "涓瓑"
+    elif score <= -4:
+        bias, confidence = "鍋忕┖", "杈冨己"
+    elif score <= -1:
+        bias, confidence = "鍋忕┖", "涓瓑"
+    else:
+        bias, confidence = "闇囪崱", "涓瓑"
+    return {"score": score, "bias": bias, "confidence": confidence, "reasons": reasons}
+
+
+def build_strategy_text(product_name, latest_metrics, signals, market_state):
+    bias = market_state["bias"]
+    if bias == "???":
+        strategy_text = "\n".join([
+            f"????????product_name} ?????????????????,
+            "??????????????????????????????????????????????,
+            "?????????????????MA5 ??MA20 ????????????????????????????????????????,
+            "?????????????????MA20 ?????? MACD ?????????????,
+            "?????????????????? MA20 ??????????????????????????????????????,
+        ])
+    elif bias == "???":
+        strategy_text = "\n".join([
+            f"????????product_name} ?????????????????,
+            "????????????????????????????????????????????????????????,
+            "?????????????????MA5 ??MA20 ????????????????????????????????,
+            "?????????????????MA20 ?????? MACD ???????????,
+            "???????????????????MA20 ???????????????????????????,
+        ])
+    else:
+        strategy_text = "\n".join([
+            f"????????product_name} ????????????????????????,
+            "???????????????????????????????????????????,
+            "??????????????????????????????????????????????????????????,
+            "??????????????????????????????????????????????????,
+            "???????????????????????????????????????????,
+        ])
+    ma20 = safe_float(latest_metrics.get("ma20"))
+    close = safe_float(latest_metrics.get("close"))
+    if pd.notna(ma20) and ma20 != 0 and pd.notna(close):
+        bias_pct = (close - ma20) / ma20 * 100
+        if bias_pct > 4:
+            strategy_text += "\n?????????????? 20 ????? 4%?????????????????"
+        elif bias_pct < -4:
+            strategy_text += "\n?????????????? 20 ????? 4%???????????????????????"
+    return strategy_text
+def build_local_daily_report(product_name, latest_metrics, signals, market_state):
+    bias = market_state["bias"]
+    confidence = market_state["confidence"]
+    leading_reasons = "锛?.join(market_state["reasons"][:4]) if market_state["reasons"] else "褰撳墠鐩橀潰淇″彿涓€?
+
+    headline = f"{product_name}澶嶇洏鏃ユ姤"
+    source_text = latest_metrics.get("data_source", "鏃ョ嚎")
+    if latest_metrics.get("snapshot_time"):
+        source_text = f"{source_text} {latest_metrics['snapshot_time']}"
+    subline = f"鏃ユ湡锛歿latest_metrics['date'].strftime('%Y-%m-%d')} | 鏂瑰悜鍒ゆ柇锛歿bias} | 寮哄害锛歿confidence} | 鏁版嵁鏉ユ簮锛歿source_text}"
+
+    core_view = (
+        f"{product_name} 褰撳墠鏁翠綋鍒ゆ柇涓簕bias}锛屼俊鍙峰己搴︿负{confidence}銆?
+        f"浠庣洏闈笌鍩烘湰闈唬鐞嗘寚鏍囩湅锛屼富瑕侀€昏緫闆嗕腑鍦細{leading_reasons}銆?
+    )
+
+    technical_section = "\n".join([
+        f"鏃ョ嚎鏀剁洏浠锋姤 {format_number(latest_metrics['close'])}锛屽綋鏃ユ定璺屽箙 {format_number(latest_metrics['change_pct'])}%銆?,
+        f"鍧囩嚎鏂归潰锛孧A5/20/60/250 鍒嗗埆涓?{format_number(latest_metrics['ma5'])} / {format_number(latest_metrics['ma20'])} / {format_number(latest_metrics['ma60'])} / {format_number(latest_metrics['ma250'])}銆?,
+        f"MACD 鎸囨爣鏄剧ず DIF/DEA/MACD 鍒嗗埆涓?{format_number(latest_metrics['dif'])} / {format_number(latest_metrics['dea'])} / {format_number(latest_metrics['macd'])}銆?,
+        "鑻ヤ环鏍肩户缁ǔ瀹氬湪涓湡鍧囩嚎涔嬩笂锛屾妧鏈潰浠嶆湁鏈涚淮鎸佸亸寮虹粨鏋勶紱鍙嶄箣鑻ラ噸鏂板け瀹堝叧閿潎绾匡紝鍒欓渶闄嶄綆瓒嬪娍鍒ゆ柇寮哄害銆?
+        if bias == "鍋忓"
+        else "鑻ヤ环鏍肩户缁彈鍘嬩簬涓湡鍧囩嚎锛屽急鍔跨粨鏋勬洿瀹规槗寤剁画锛涜嫢閲嶆柊鏀跺鍏抽敭鍧囩嚎锛屽垯闇€淇鍋忕┖鍒ゆ柇銆?
+        if bias == "鍋忕┖"
+        else "褰撳墠鎶€鏈粨鏋勬洿鎺ヨ繎鏁寸悊闃舵锛屽悗缁柟鍚戜粛闇€绛夊緟鍖洪棿绐佺牬纭銆?,
+    ])
+
+    fundamental_section = "\n".join([
+        f"搴撳瓨绔細{signals.get('inventory_note', '鏆傛棤搴撳瓨鍒ゆ柇')}銆?,
+        f"鏈熺幇缁撴瀯锛歿signals.get('basis_note', '鏆傛棤鍩哄樊鍒ゆ柇')}銆?,
+        f"娑堟伅闈細{signals.get('news_note', '鏆傛棤娑堟伅鍒ゆ柇')}銆?,
+        "鑻ュ簱瀛樸€佹湡鐜扮粨鏋勪笌娑堟伅闈㈠悗缁户缁湞鍚屼竴鏂瑰悜鍏辨尟锛屽垯鍩烘湰闈俊鍙风殑鍙傝€冧环鍊间細杩涗竴姝ユ彁鍗囥€?,
+    ])
+
+    if bias == "鍋忓":
+        trading_section = "\n".join([
+            "浜ゆ槗涓婂缓璁互椤哄娍鍥炶皟甯冨眬涓轰富锛屼笉寤鸿楂樹綅杩芥定銆?,
+            "鍙噸鐐硅窡韪洖韪?MA5 鎴?MA20 鍚庣殑鎵挎帴鎯呭喌锛岃嫢缂╅噺鍥炶俯鍚庨噸鏂版斁閲忎笂琛岋紝鍙€冭檻杞讳粨灏濊瘯銆?,
+            "鑻ユ敹鐩橀噸鏂板洖钀借嚦 MA20 涓嬫柟锛屼笖鍔ㄨ兘鍚屾杞急锛屽垯鐭嚎鍋忓閫昏緫鏆傛椂澶辨晥銆?,
+        ])
+    elif bias == "鍋忕┖":
+        trading_section = "\n".join([
+            "浜ゆ槗涓婂缓璁互鍙嶅脊鎵垮帇鍚庣殑椤哄娍鎬濊矾涓轰富锛屼笉寤鸿鍦ㄦ€ヨ穼鍚庣户缁拷绌恒€?,
+            "鍙噸鐐硅窡韪弽鎶?MA5 鎴?MA20 鍚庣殑鍘嬪姏纭锛岃嫢涓婃敾涔忓姏锛屽彲鑰冭檻杞讳粨灏濊瘯銆?,
+            "鑻ヤ环鏍奸噸鏂扮珯鍥?MA20 涓婃柟骞朵即闅忛噺鑳戒慨澶嶏紝鍒欏亸绌洪€昏緫鏆傛椂澶辨晥銆?,
+        ])
+    else:
+        trading_section = "\n".join([
+            "浜ゆ槗涓婁互绛夊緟涓轰富锛岄噸鐐瑰叧娉ㄥ尯闂翠笂娌夸笌涓嬫部鐨勭獊鐮寸‘璁ゃ€?,
+            "鑻ユ斁閲忕獊鐮磋繎鍑犳棩楂樼偣锛屽彲杞悜鍋忓搴斿锛涜嫢璺岀牬杩戝嚑鏃ヤ綆鐐癸紝鍙浆鍚戝亸绌哄簲瀵广€?,
+            "鍦ㄥ潎绾跨紶缁曘€佹柟鍚戜笉娓呯殑闃舵锛屼笉寤鸿棰戠箒浜ゆ槗鎴栭噸浠撴娂娉ㄥ崟杈规柟鍚戙€?,
+        ])
+
+    risk_section = "\n".join([
+        "鍏嶈垂鏁版嵁婧愬彲鑳藉瓨鍦ㄥ欢杩熸垨涓存椂缂哄け锛岄渶娉ㄦ剰鏁版嵁璐ㄩ噺椋庨櫓銆?,
+        "鑻ユ秷鎭潰蹇€熷弽杞紝鐭嚎鎶€鏈垽鏂彲鑳借鎵撴柇銆?,
+        "鏈姤鍛婄敱鏈湴瑙勫垯鑷姩鐢熸垚锛岄€傚悎澶嶇洏杈呭姪锛屼笉绛夊悓浜庡疄鏃舵姇椤炬湇鍔°€?,
+        "浠ヤ笂鍐呭浠呬緵澶嶇洏浜ゆ祦锛屼笉鏋勬垚鎶曡祫寤鸿銆?,
+    ])
+
+    return "\n\n".join([
+        headline,
+        subline,
+        "涓€銆佷粖鏃ユ牳蹇冭鐐?,
+        core_view,
+        "浜屻€佹妧鏈潰璺熻釜",
+        technical_section,
+        "涓夈€佸熀鏈潰涓庢秷鎭潰璺熻釜",
+        fundamental_section,
+        "鍥涖€佷氦鏄撴€濊矾鍙傝€?,
+        trading_section,
+        "浜斻€侀闄╂彁绀?,
+        risk_section,
+    ])
+
+
+def build_analysis_context(product_name):
+    config = FUTURE_CONFIG[product_name]
+    daily_df = load_daily_data(config["main_symbol"])
+    daily_df, freshness = append_snapshot_row_if_needed(daily_df, config)
+    if len(daily_df) < 30:
+        raise ValueError("鍘嗗彶鏁版嵁澶皯锛屾殏鏃舵棤娉曞畬鎴愬畬鏁村垎鏋愩€?)
+    technical_text, latest_metrics = build_technical_text(product_name, daily_df)
+    latest_metrics["data_source"] = freshness["data_source"]
+    latest_metrics["snapshot_time"] = freshness["snapshot_time"]
+    fundamental_text, signals = build_fundamental_text(product_name, config, latest_metrics)
+    market_state = evaluate_market_state(latest_metrics, signals)
+    strategy_text = build_strategy_text(product_name, latest_metrics, signals, market_state)
+    report_text = build_local_daily_report(product_name, latest_metrics, signals, market_state)
+    return {
+        "product_name": product_name,
+        "technical_text": technical_text,
+        "fundamental_text": fundamental_text,
+        "strategy_text": strategy_text,
+        "report_text": report_text,
+        "latest_metrics": latest_metrics,
+        "signals": signals,
+        "market_state": market_state,
+        "freshness": freshness,`r`n        "daily_df": daily_df,
+    }
+
+
+def refresh_summary(product_name, clear_report=False):
+    context = build_analysis_context(product_name)
+    st.session_state.selected_product = product_name
+    st.session_state.technical_text = context["technical_text"]
+    st.session_state.fundamental_text = context["fundamental_text"]
+    st.session_state.strategy_text = context["strategy_text"]
+    st.session_state.analysis_context = context
+    st.session_state.last_auto_fetch_date = datetime.now().strftime("%Y-%m-%d")
+    st.session_state.last_refresh_ts = datetime.now().timestamp()
+    if clear_report:
+        st.session_state.report_text = ""
+
+
+def ensure_summary(product_name):
+    if st.session_state.analysis_context is None or st.session_state.selected_product != product_name:
+        refresh_summary(product_name)
+
+
+def maybe_auto_refresh(product_name):
+    now = datetime.now()
+    seconds_since_refresh = now.timestamp() - float(st.session_state.get("last_refresh_ts", 0.0))
+    if now.time() >= time(15, 0) and seconds_since_refresh >= 300:
+        try:
+            refresh_summary(product_name)
+            st.info("妫€娴嬪埌宸茶繃鏀剁洏鍚庢椂闂达紝宸茶嚜鍔ㄥ埛鏂版暟鎹€?)
+        except Exception as exc:
+            st.warning(f"鑷姩鎶撳彇澶辫触锛歿exc}")
+
+
+def render_status_cards():
+    context = st.session_state.analysis_context
+    if not context:
+        return
+    market_state = context["market_state"]
+    latest_metrics = context["latest_metrics"]
+    freshness = context.get("freshness", {})
+    source_label = freshness.get("data_source", "鏃ョ嚎")
+    if freshness.get("snapshot_time"):
+        source_label = f"{source_label} {freshness['snapshot_time']}"
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("鏂瑰悜鍒ゆ柇", market_state["bias"])
+    col2.metric("淇″彿寮哄害", market_state["confidence"])
+    col3.metric("鍗曟棩娑ㄨ穼骞?, f"{latest_metrics['change_pct']:.2f}%")
+    col4.metric("鏀剁洏浠?, format_number(latest_metrics["close"]))
+    col5.metric("鏁版嵁鏉ユ簮", source_label)
+
+
+def render_price_chart():
+    context = st.session_state.analysis_context
+    if not context:
+        return
+    daily_df = context.get("daily_df")
+    if daily_df is None or daily_df.empty:
+        return
+    chart_df = daily_df[["date", "close"]].copy()
+    chart_df["date"] = pd.to_datetime(chart_df["date"])
+    chart_df = chart_df.set_index("date")
+    st.subheader("??????")
+    st.line_chart(chart_df["close"])
+def render_actions(product_name):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("鎵嬪姩鑾峰彇鏀剁洏鏁版嵁骞跺～鍏?, use_container_width=True):
+            try:
+                with st.spinner("姝ｅ湪鎶撳彇鏈熻揣鏁版嵁..."):
+                    load_daily_data.clear()
+                    load_basis_data.clear()
+                    load_news_data.clear()
+                    load_fast_snapshot.clear()
+                    refresh_summary(product_name, clear_report=False)
+                st.success("宸茶幏鍙栨渶鏂版暟鎹苟濉厖銆?)
+            except Exception as exc:
+                st.error(f"鑾峰彇澶辫触锛歿exc}")
+    with col2:
+        if st.button("鐢熸垚瀹㈡埛鏃ユ姤", use_container_width=True):
+            try:
+                ensure_summary(product_name)
+                st.session_state.report_text = st.session_state.analysis_context["report_text"]
+                st.success("宸茬敓鎴愬鎴锋棩鎶ャ€?)
+            except Exception as exc:
+                st.error(f"鐢熸垚澶辫触锛歿exc}")
+    with col3:
+        if st.button("娓呯┖瀹㈡埛鏃ユ姤", use_container_width=True):
+            st.session_state.report_text = ""
+            st.success("宸叉竻绌哄鎴锋棩鎶ャ€?)
+
+
+def render_text_sections():
+    tab1, tab2, tab3 = st.tabs(["?????", "??????", "????"])
+    with tab1:
+        st.text_area("????????K/?K????MACD?", key="technical_text", height=320)
+    with tab2:
+        st.text_area("????????????????/????????", key="fundamental_text", height=360)
+    with tab3:
+        st.text_area("????????", key="strategy_text", height=220)def render_report_section():
+    st.subheader("瀹㈡埛鏃ユ姤")
+    if st.session_state.report_text:
+        st.markdown(st.session_state.report_text.replace("\n", "  \n"))
+    else:
+        st.info("鐐瑰嚮鈥滅敓鎴愬鎴锋棩鎶モ€濆悗锛岃繖閲屼細鏄剧ず鏈湴瑙勫垯鐢熸垚鐨勬棩鎶ュ唴瀹广€?)
+
+
+def main():
+    init_page()
+    init_state()
+    if datetime.now().time() >= time(15, 0):
+        st_autorefresh(interval=300000, key="after_close_refresh")
+    product_name = st.selectbox(
+        "閫夋嫨鏈熻揣鍝佺",
+        options=list(FUTURE_CONFIG.keys()),
+        index=list(FUTURE_CONFIG.keys()).index(st.session_state.selected_product),
+    )
+    if product_name != st.session_state.selected_product:
+        try:
+            with st.spinner("姝ｅ湪鍒囨崲鍝佺骞跺埛鏂版暟鎹?.."):
+                refresh_summary(product_name, clear_report=True)
+            st.info("宸叉牴鎹柊閫夋嫨鐨勫搧绉嶈嚜鍔ㄥ埛鏂板熀纭€鍒嗘瀽銆?)
+        except Exception as exc:
+            st.warning(f"鍒囨崲鍝佺鍚庤嚜鍔ㄥ埛鏂板け璐ワ細{exc}")
+    maybe_auto_refresh(product_name)
+    render_status_cards()`r`n    render_price_chart()`r`n    render_actions(product_name)
+    render_text_sections()
+    render_report_section()
+
+
+if __name__ == "__main__":
+    main()
+
