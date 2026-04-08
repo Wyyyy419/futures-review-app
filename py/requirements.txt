@@ -1,4 +1,3 @@
 streamlit
 pandas
 akshare
-google-genai
