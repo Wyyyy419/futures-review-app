@@ -567,11 +567,17 @@ def render_price_chart():
     daily_df = context.get("daily_df")
     if daily_df is None or daily_df.empty:
         return
-    chart_df = daily_df[["date", "close"]].copy()
+    chart_df = daily_df[["date", "close", "ma20", "ma60"]].copy().tail(252)
     chart_df["date"] = pd.to_datetime(chart_df["date"])
     chart_df = chart_df.set_index("date")
-    st.subheader("收盘价趋势图")
-    st.line_chart(chart_df["close"])
+    st.subheader("收盘价趋势图（近一年）")
+    st.line_chart(chart_df[["close", "ma20", "ma60"]])
+
+    with st.expander("查看近五日行情原始数据"):
+        raw_cols = ["date", "open", "high", "low", "close", "volume", "hold"]
+        raw_df = daily_df.reindex(columns=raw_cols).tail(5).copy()
+        raw_df["date"] = pd.to_datetime(raw_df["date"]).dt.strftime("%Y-%m-%d")
+        st.dataframe(raw_df, hide_index=True, use_container_width=True)
 
 
 def render_actions(product_name):
