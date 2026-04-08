@@ -4,6 +4,7 @@ from datetime import datetime, time
 import akshare as ak
 import pandas as pd
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 
 APP_TITLE = "期货复盘总结"
@@ -68,6 +69,7 @@ def init_state():
         "report_text": "",
         "analysis_context": None,
         "last_auto_fetch_date": None,
+        "last_refresh_ts": 0.0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -117,7 +119,57 @@ def enrich_indicators(df):
     return enriched
 
 
-@st.cache_data(ttl=1800)
+def get_snapshot_market(config):
+    return "FF" if config["exchange"] == "中金所" else "CF"
+
+
+@st.cache_data(ttl=120)
+def load_fast_snapshot(main_symbol, market):
+    snapshot_df = ak.futures_zh_spot(symbol=main_symbol, market=market, adjust="0")
+    if snapshot_df.empty:
+        return None
+    return snapshot_df.iloc[0].to_dict()
+
+
+def append_snapshot_row_if_needed(df, config):
+    now = datetime.now()
+    today = pd.Timestamp(now.date())
+    latest_date = pd.Timestamp(df["date"].max())
+
+    if now.time() < time(15, 0):
+        return df, {"data_source": "日线", "snapshot_time": None}
+
+    if latest_date >= today:
+        return df, {"data_source": "日线", "snapshot_time": None}
+
+    try:
+        snapshot = load_fast_snapshot(config["main_symbol"], get_snapshot_market(config))
+        if not snapshot:
+            return df, {"data_source": "日线", "snapshot_time": None}
+
+        snapshot_row = {
+            "date": today,
+            "open": pd.to_numeric(snapshot.get("open"), errors="coerce"),
+            "high": pd.to_numeric(snapshot.get("high"), errors="coerce"),
+            "low": pd.to_numeric(snapshot.get("low"), errors="coerce"),
+            "close": pd.to_numeric(snapshot.get("current_price"), errors="coerce"),
+            "volume": pd.to_numeric(snapshot.get("volume"), errors="coerce"),
+            "hold": pd.to_numeric(snapshot.get("hold"), errors="coerce"),
+            "settle": pd.to_numeric(snapshot.get("last_settle_price"), errors="coerce"),
+        }
+        if pd.isna(snapshot_row["settle"]):
+            snapshot_row["settle"] = snapshot_row["close"]
+
+        patched_df = pd.concat([df, pd.DataFrame([snapshot_row])], ignore_index=True)
+        return patched_df, {
+            "data_source": "收盘快照补全",
+            "snapshot_time": str(snapshot.get("time", "")),
+        }
+    except Exception:
+        return df, {"data_source": "日线", "snapshot_time": None}
+
+
+@st.cache_data(ttl=180)
 def load_daily_data(main_symbol):
     df = ak.futures_zh_daily_sina(symbol=main_symbol)
     df["date"] = pd.to_datetime(df["date"])
@@ -133,12 +185,12 @@ def load_inventory_data(inventory_symbol):
     return ak.futures_inventory_em(symbol=inventory_symbol)
 
 
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=180)
 def load_news_data():
     return ak.stock_info_global_cls(symbol="全部")
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=180)
 def load_basis_data(trade_date, spot_symbol):
     if not spot_symbol:
         return None
@@ -407,7 +459,10 @@ def build_local_daily_report(product_name, latest_metrics, signals, market_state
     leading_reasons = "；".join(market_state["reasons"][:4]) if market_state["reasons"] else "当前盘面信号中性"
 
     headline = f"{product_name}复盘日报"
-    subline = f"日期：{latest_metrics['date'].strftime('%Y-%m-%d')} | 方向判断：{bias} | 强度：{confidence}"
+    source_text = latest_metrics.get("data_source", "日线")
+    if latest_metrics.get("snapshot_time"):
+        source_text = f"{source_text} {latest_metrics['snapshot_time']}"
+    subline = f"日期：{latest_metrics['date'].strftime('%Y-%m-%d')} | 方向判断：{bias} | 强度：{confidence} | 数据来源：{source_text}"
 
     core_view = (
         f"{product_name} 当前整体判断为{bias}，信号强度为{confidence}。"
@@ -477,9 +532,12 @@ def build_local_daily_report(product_name, latest_metrics, signals, market_state
 def build_analysis_context(product_name):
     config = FUTURE_CONFIG[product_name]
     daily_df = load_daily_data(config["main_symbol"])
+    daily_df, freshness = append_snapshot_row_if_needed(daily_df, config)
     if len(daily_df) < 30:
         raise ValueError("历史数据太少，暂时无法完成完整分析。")
     technical_text, latest_metrics = build_technical_text(product_name, daily_df)
+    latest_metrics["data_source"] = freshness["data_source"]
+    latest_metrics["snapshot_time"] = freshness["snapshot_time"]
     fundamental_text, signals = build_fundamental_text(product_name, config, latest_metrics)
     market_state = evaluate_market_state(latest_metrics, signals)
     strategy_text = build_strategy_text(product_name, latest_metrics, signals, market_state)
@@ -493,6 +551,7 @@ def build_analysis_context(product_name):
         "latest_metrics": latest_metrics,
         "signals": signals,
         "market_state": market_state,
+        "freshness": freshness,
     }
 
 
@@ -504,6 +563,7 @@ def refresh_summary(product_name, clear_report=False):
     st.session_state.strategy_text = context["strategy_text"]
     st.session_state.analysis_context = context
     st.session_state.last_auto_fetch_date = datetime.now().strftime("%Y-%m-%d")
+    st.session_state.last_refresh_ts = datetime.now().timestamp()
     if clear_report:
         st.session_state.report_text = ""
 
@@ -515,11 +575,11 @@ def ensure_summary(product_name):
 
 def maybe_auto_refresh(product_name):
     now = datetime.now()
-    today_text = now.strftime("%Y-%m-%d")
-    if now.time() >= time(15, 5) and st.session_state.last_auto_fetch_date != today_text:
+    seconds_since_refresh = now.timestamp() - float(st.session_state.get("last_refresh_ts", 0.0))
+    if now.time() >= time(15, 0) and seconds_since_refresh >= 300:
         try:
             refresh_summary(product_name)
-            st.info("检测到已过收盘后时间，已自动抓取一次数据。")
+            st.info("检测到已过收盘后时间，已自动刷新数据。")
         except Exception as exc:
             st.warning(f"自动抓取失败：{exc}")
 
@@ -530,11 +590,16 @@ def render_status_cards():
         return
     market_state = context["market_state"]
     latest_metrics = context["latest_metrics"]
-    col1, col2, col3, col4 = st.columns(4)
+    freshness = context.get("freshness", {})
+    source_label = freshness.get("data_source", "日线")
+    if freshness.get("snapshot_time"):
+        source_label = f"{source_label} {freshness['snapshot_time']}"
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("方向判断", market_state["bias"])
     col2.metric("信号强度", market_state["confidence"])
     col3.metric("单日涨跌幅", f"{latest_metrics['change_pct']:.2f}%")
     col4.metric("收盘价", format_number(latest_metrics["close"]))
+    col5.metric("数据来源", source_label)
 
 
 def render_actions(product_name):
@@ -543,6 +608,10 @@ def render_actions(product_name):
         if st.button("手动获取收盘数据并填充", use_container_width=True):
             try:
                 with st.spinner("正在抓取期货数据..."):
+                    load_daily_data.clear()
+                    load_basis_data.clear()
+                    load_news_data.clear()
+                    load_fast_snapshot.clear()
                     refresh_summary(product_name, clear_report=False)
                 st.success("已获取最新数据并填充。")
             except Exception as exc:
@@ -578,6 +647,8 @@ def render_report_section():
 def main():
     init_page()
     init_state()
+    if datetime.now().time() >= time(15, 0):
+        st_autorefresh(interval=300000, key="after_close_refresh")
     product_name = st.selectbox(
         "选择期货品种",
         options=list(FUTURE_CONFIG.keys()),
