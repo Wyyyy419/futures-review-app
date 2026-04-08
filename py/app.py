@@ -7,7 +7,7 @@ import streamlit as st
 
 
 APP_TITLE = "期货复盘总结"
-APP_CAPTION = "收盘后抓取行情与资讯，使用本地规则自动生成专业复盘建议。"
+APP_CAPTION = "收盘后抓取行情与资讯，使用本地规则自动生成更像客户日报的复盘内容。"
 DEFAULT_PRODUCT = "螺纹钢"
 
 
@@ -225,20 +225,20 @@ def build_technical_text(product_name, daily_df):
 def build_inventory_text(config):
     symbol = config["inventory_symbol"]
     if not symbol:
-        return "库存：当前品种暂未配置库存接口。", {"inventory_bias": "neutral", "inventory_note": "无库存接口"}
+        return "库存：当前品种暂未配置库存接口。", {"inventory_bias": "neutral", "inventory_note": "暂无库存数据支撑"}
     try:
         inventory_df = load_inventory_data(symbol)
         if inventory_df is None or inventory_df.empty:
-            return "库存：未获取到库存数据。", {"inventory_bias": "neutral", "inventory_note": "库存缺失"}
+            return "库存：未获取到库存数据。", {"inventory_bias": "neutral", "inventory_note": "库存数据缺失"}
         latest = inventory_df.iloc[-1]
         previous = inventory_df.iloc[-2] if len(inventory_df) >= 2 else latest
         delta = safe_float(latest["增减"])
         if pd.notna(delta) and delta < 0:
-            interpretation, bias = "库存下降，对价格有一定支撑。", "bullish"
+            interpretation, bias = "库存继续回落，对盘面形成一定支撑。", "bullish"
         elif pd.notna(delta) and delta > 0:
-            interpretation, bias = "库存增加，供给压力略有抬升。", "bearish"
+            interpretation, bias = "库存边际增加，供给端压力略有抬升。", "bearish"
         else:
-            interpretation, bias = "库存变化不大，库存端暂未给出强信号。", "neutral"
+            interpretation, bias = "库存变化不大，库存端暂未提供明确方向。", "neutral"
         text = "\n".join([
             "库存数据：",
             f"最新日期：{latest['日期']}",
@@ -247,7 +247,7 @@ def build_inventory_text(config):
             f"库存解读：{interpretation}",
             f"上一期库存：{format_number(previous['库存'], 0)}",
         ])
-        return text, {"inventory_bias": bias, "inventory_note": interpretation, "inventory_delta": delta}
+        return text, {"inventory_bias": bias, "inventory_note": interpretation}
     except Exception as exc:
         return f"库存数据：获取失败，原因：{exc}", {"inventory_bias": "neutral", "inventory_note": "库存抓取失败"}
 
@@ -255,20 +255,20 @@ def build_inventory_text(config):
 def build_basis_text(config, trade_date):
     spot_symbol = config["spot_symbol"]
     if not spot_symbol:
-        return "期现与产业链：当前品种暂未配置现货/基差接口。", {"basis_bias": "neutral", "basis_note": "无基差接口"}
+        return "期现与产业链：当前品种暂未配置现货/基差接口。", {"basis_bias": "neutral", "basis_note": "暂无基差结构判断"}
     try:
         basis_df = load_basis_data(trade_date.strftime("%Y%m%d"), spot_symbol)
         if basis_df is None or basis_df.empty:
-            return "期现与产业链：未获取到现货和基差数据。", {"basis_bias": "neutral", "basis_note": "基差缺失"}
+            return "期现与产业链：未获取到现货和基差数据。", {"basis_bias": "neutral", "basis_note": "基差数据缺失"}
         latest = basis_df.iloc[0]
         dom_basis = safe_float(latest["dom_basis"])
         dom_basis_rate = safe_float(latest["dom_basis_rate"])
         if pd.notna(dom_basis) and dom_basis > 0:
-            interpretation, bias = "主力合约升水现货，市场对远月预期偏强。", "bullish"
+            interpretation, bias = "主力合约维持升水结构，远月预期相对偏强。", "bullish"
         elif pd.notna(dom_basis) and dom_basis < 0:
-            interpretation, bias = "主力合约贴水现货，现货端相对更强。", "bearish"
+            interpretation, bias = "主力合约维持贴水结构，现货端相对更强。", "bearish"
         else:
-            interpretation, bias = "基差信号中性。", "neutral"
+            interpretation, bias = "期现基差整体中性，未形成明显方向引导。", "neutral"
         text = "\n".join([
             "期现与产业链代理指标：",
             f"现货价格：{format_number(latest['spot_price'])}",
@@ -276,7 +276,7 @@ def build_basis_text(config, trade_date):
             f"主力基差：{format_number(dom_basis)}，基差率：{format_number(dom_basis_rate * 100 if pd.notna(dom_basis_rate) else math.nan)}%",
             f"解读：{interpretation}",
         ])
-        return text, {"basis_bias": bias, "basis_note": interpretation, "dom_basis": dom_basis}
+        return text, {"basis_bias": bias, "basis_note": interpretation}
     except Exception as exc:
         return f"期现与产业链：获取失败，原因：{exc}", {"basis_bias": "neutral", "basis_note": "基差抓取失败"}
 
@@ -287,17 +287,17 @@ def classify_news_sentiment(text_blob):
     bullish_score = sum(word in text_blob for word in bullish_words)
     bearish_score = sum(word in text_blob for word in bearish_words)
     if bullish_score > bearish_score:
-        return "bullish", "消息情绪略偏多，但仍需确认是否真正影响供需。"
+        return "bullish", "相关新闻对盘面情绪偏正面，但仍需观察其是否持续传导到供需端。"
     if bearish_score > bullish_score:
-        return "bearish", "消息情绪略偏空，需留意是否继续发酵。"
-    return "neutral", "消息偏中性，短线更多还是跟随价格本身。"
+        return "bearish", "相关新闻对盘面情绪偏负面，短线需防范情绪继续发酵。"
+    return "neutral", "消息面对盘面影响偏中性，短线仍需更多跟踪验证。"
 
 
 def build_news_text(config):
     try:
         news_df = load_news_data()
         if news_df.empty:
-            return "消息面：未获取到财联社电报。", {"news_bias": "neutral", "news_note": "新闻缺失", "news_items": []}
+            return "消息面：未获取到财联社电报。", {"news_bias": "neutral", "news_note": "消息面暂缺"}
         rows = []
         for _, row in news_df.head(200).iterrows():
             haystack = f"{row['标题']} {row['内容']}"
@@ -306,20 +306,17 @@ def build_news_text(config):
             if len(rows) >= 5:
                 break
         if not rows:
-            return "消息面：财联社电报中暂未筛到与该品种高度相关的当日关键词新闻，可人工补充产业资讯。", {"news_bias": "neutral", "news_note": "未筛到高相关资讯", "news_items": []}
+            return "消息面：当日未筛到高度相关资讯，建议结合产业资讯做人工补充。", {"news_bias": "neutral", "news_note": "消息面暂无高相关事件"}
         lines = ["财联社相关新闻："]
         text_blob = ""
-        news_items = []
         for row in rows:
-            title = f"{row['发布日期']} {row['发布时间']} | {row['标题']}"
-            lines.append(f"- {title}")
+            lines.append(f"- {row['发布日期']} {row['发布时间']} | {row['标题']}")
             text_blob += f"{row['标题']} {row['内容']} "
-            news_items.append(title)
         news_bias, conclusion = classify_news_sentiment(text_blob)
         lines.append(f"消息解读：{conclusion}")
-        return "\n".join(lines), {"news_bias": news_bias, "news_note": conclusion, "news_items": news_items}
+        return "\n".join(lines), {"news_bias": news_bias, "news_note": conclusion}
     except Exception as exc:
-        return f"消息面：财联社新闻获取失败，原因：{exc}", {"news_bias": "neutral", "news_note": "新闻抓取失败", "news_items": []}
+        return f"消息面：财联社新闻获取失败，原因：{exc}", {"news_bias": "neutral", "news_note": "消息抓取失败"}
 
 
 def build_fundamental_text(product_name, config, latest_metrics):
@@ -344,25 +341,26 @@ def build_fundamental_text(product_name, config, latest_metrics):
 def evaluate_market_state(latest_metrics, signals):
     score = 0
     reasons = []
-    for condition, reason_pos, reason_neg in [
-        (latest_metrics["close"] > latest_metrics["ma20"], "价格位于 MA20 上方", "价格位于 MA20 下方"),
-        (latest_metrics["close"] > latest_metrics["ma60"], "价格位于 MA60 上方", "价格位于 MA60 下方"),
-        (latest_metrics["ma20"] > latest_metrics["ma60"], "MA20 高于 MA60", "MA20 低于 MA60"),
+    checks = [
+        (latest_metrics["close"] > latest_metrics["ma20"], "价格运行于 MA20 上方", "价格运行于 MA20 下方"),
+        (latest_metrics["close"] > latest_metrics["ma60"], "价格运行于 MA60 上方", "价格运行于 MA60 下方"),
+        (latest_metrics["ma20"] > latest_metrics["ma60"], "中期均线结构偏强", "中期均线结构偏弱"),
         (latest_metrics["macd"] > 0, "MACD 位于零轴上方", "MACD 位于零轴下方"),
-    ]:
+    ]
+    for condition, pos_text, neg_text in checks:
         score += 1 if condition else -1
-        reasons.append(reason_pos if condition else reason_neg)
-    for key, bull_reason, bear_reason in [
-        ("inventory_bias", "库存变化偏多", "库存变化偏空"),
-        ("basis_bias", "基差结构偏多", "基差结构偏空"),
-        ("news_bias", "新闻情绪偏多", "新闻情绪偏空"),
+        reasons.append(pos_text if condition else neg_text)
+    for key, pos_text, neg_text in [
+        ("inventory_bias", "库存端对价格形成支撑", "库存端对价格形成压制"),
+        ("basis_bias", "期现结构偏强", "期现结构偏弱"),
+        ("news_bias", "消息情绪偏正面", "消息情绪偏负面"),
     ]:
         if signals.get(key) == "bullish":
             score += 1
-            reasons.append(bull_reason)
+            reasons.append(pos_text)
         elif signals.get(key) == "bearish":
             score -= 1
-            reasons.append(bear_reason)
+            reasons.append(neg_text)
     if score >= 4:
         bias, confidence = "偏多", "较强"
     elif score >= 1:
@@ -379,35 +377,101 @@ def evaluate_market_state(latest_metrics, signals):
 def build_strategy_text(product_name, latest_metrics, signals, market_state):
     bias = market_state["bias"]
     if bias == "偏多":
-        return "\n".join([f"综合结论：{product_name} 当前属于偏多思路。", "主观策略倾向：优先做顺势低吸，不建议脱离均线追高。", "执行建议：优先等待回踩 MA5 或 MA20 附近观察承接，若缩量回踩后重新放量上行，可考虑轻仓试多。", "确认条件：价格持续位于 MA20 上方，且 MACD 不出现明显走弱。", "风险提示：若价格收盘重新跌回 MA20 下方，或库存与消息同步转弱，多头逻辑需要降级。"])
+        return "\n".join([
+            f"综合结论：{product_name} 当前维持偏多交易思路。",
+            "主观策略倾向：优先考虑顺势回调低吸，不建议脱离均线结构追高。",
+            "执行建议：重点观察回踩 MA5 或 MA20 后的承接情况，若缩量回踩、放量上行，可考虑轻仓试多。",
+            "确认条件：价格持续站稳 MA20 上方，且 MACD 不出现明显走弱。",
+            "风险提示：若收盘重新跌回 MA20 下方，同时库存与消息面同步转弱，则需下调多头预期。",
+        ])
     if bias == "偏空":
-        return "\n".join([f"综合结论：{product_name} 当前属于偏空思路。", "主观策略倾向：优先做反弹承压后的顺势交易，不建议在连续急跌后盲目追空。", "执行建议：等待反抽 MA5 或 MA20 附近确认压力，若上攻乏力，可考虑轻仓试空。", "确认条件：价格持续位于 MA20 下方，且 MACD 维持弱势结构。", "风险提示：若价格快速收复 MA20 并伴随放量，空头逻辑需要及时降级。"])
-    return "\n".join([f"综合结论：{product_name} 当前更适合按震荡思路处理。", "主观策略倾向：暂时不抢方向，优先等待区间突破后的确认信号。", "执行建议：把重点放在区间上沿和下沿的突破确认，不要在均线缠绕阶段频繁试单。", "确认条件：放量突破近几日高点可转向偏多，跌破近几日低点可转向偏空。", "风险提示：横盘阶段最容易来回打止损，仓位应明显小于趋势行情。"])
+        return "\n".join([
+            f"综合结论：{product_name} 当前维持偏空交易思路。",
+            "主观策略倾向：优先考虑反弹承压后的顺势交易，不建议在连续急跌后继续追空。",
+            "执行建议：重点观察反抽 MA5 或 MA20 后的压力确认，若上攻乏力，可考虑轻仓试空。",
+            "确认条件：价格持续位于 MA20 下方，且 MACD 维持弱势结构。",
+            "风险提示：若价格快速收复 MA20 并伴随放量，空头逻辑需要及时降级。",
+        ])
+    return "\n".join([
+        f"综合结论：{product_name} 当前更适合按震荡整理思路处理。",
+        "主观策略倾向：暂不抢方向，优先等待区间突破后的确认信号。",
+        "执行建议：把重点放在区间上沿和下沿的突破确认，不建议在均线缠绕阶段频繁试单。",
+        "确认条件：放量突破近几日高点可转向偏多，跌破近几日低点可转向偏空。",
+        "风险提示：横盘阶段来回波动较大，仓位应明显小于趋势行情。",
+    ])
 
 
-def build_local_report(product_name, latest_metrics, signals, market_state):
-    reasons = "、".join(market_state["reasons"][:4]) if market_state["reasons"] else "当前信号中性"
-    core_conclusion = f"{product_name} 当前总体判断为{market_state['bias']}，强度为{market_state['confidence']}。主要依据来自：{reasons}。"
+def build_local_daily_report(product_name, latest_metrics, signals, market_state):
+    bias = market_state["bias"]
+    confidence = market_state["confidence"]
+    leading_reasons = "；".join(market_state["reasons"][:4]) if market_state["reasons"] else "当前盘面信号中性"
+
+    headline = f"{product_name}复盘日报"
+    subline = f"日期：{latest_metrics['date'].strftime('%Y-%m-%d')} | 方向判断：{bias} | 强度：{confidence}"
+
+    core_view = (
+        f"{product_name} 当前整体判断为{bias}，信号强度为{confidence}。"
+        f"从盘面与基本面代理指标看，主要逻辑集中在：{leading_reasons}。"
+    )
+
     technical_section = "\n".join([
-        f"日线收盘价为 {format_number(latest_metrics['close'])}，单日涨跌幅 {format_number(latest_metrics['change_pct'])}%。",
-        f"均线结构方面，MA5/20/60/250 分别为 {format_number(latest_metrics['ma5'])} / {format_number(latest_metrics['ma20'])} / {format_number(latest_metrics['ma60'])} / {format_number(latest_metrics['ma250'])}。",
-        f"MACD 指标中，DIF/DEA/MACD 分别为 {format_number(latest_metrics['dif'])} / {format_number(latest_metrics['dea'])} / {format_number(latest_metrics['macd'])}。",
-        "当前价格若继续站稳中期均线，技术面判断更容易延续；若重新跌破关键均线，则需要下调方向强度。" if market_state["bias"] == "偏多" else "当前价格若继续受压于中期均线，弱势结构更容易延续；若重新收复关键均线，则需要修正方向判断。" if market_state["bias"] == "偏空" else "当前技术结构更接近整理阶段，后续应重点观察关键均线附近的突破方向。",
+        f"日线收盘价报 {format_number(latest_metrics['close'])}，当日涨跌幅 {format_number(latest_metrics['change_pct'])}%。",
+        f"均线方面，MA5/20/60/250 分别为 {format_number(latest_metrics['ma5'])} / {format_number(latest_metrics['ma20'])} / {format_number(latest_metrics['ma60'])} / {format_number(latest_metrics['ma250'])}。",
+        f"MACD 指标显示 DIF/DEA/MACD 分别为 {format_number(latest_metrics['dif'])} / {format_number(latest_metrics['dea'])} / {format_number(latest_metrics['macd'])}。",
+        "若价格继续稳定在中期均线之上，技术面仍有望维持偏强结构；反之若重新失守关键均线，则需降低趋势判断强度。"
+        if bias == "偏多"
+        else "若价格继续受压于中期均线，弱势结构更容易延续；若重新收复关键均线，则需修正偏空判断。"
+        if bias == "偏空"
+        else "当前技术结构更接近整理阶段，后续方向仍需等待区间突破确认。",
     ])
+
     fundamental_section = "\n".join([
-        f"库存端：{signals.get('inventory_note', '暂无库存判断')}",
-        f"期现与产业链端：{signals.get('basis_note', '暂无基差判断')}",
-        f"消息面：{signals.get('news_note', '暂无消息判断')}",
-        "若后续库存、基差与新闻情绪朝同一方向共振，基本面信号的有效性会更强；若相互矛盾，则更适合降低结论强度。",
+        f"库存端：{signals.get('inventory_note', '暂无库存判断')}。",
+        f"期现结构：{signals.get('basis_note', '暂无基差判断')}。",
+        f"消息面：{signals.get('news_note', '暂无消息判断')}。",
+        "若库存、期现结构与消息面后续继续朝同一方向共振，则基本面信号的参考价值会进一步提升。",
     ])
-    if market_state["bias"] == "偏多":
-        trading_section = "\n".join(["当前更适合顺势低吸，而不是高位追涨。", "可重点观察回踩 MA5 或 MA20 后的承接情况，若缩量回踩、放量上行，可考虑轻仓顺势参与。", "若价格跌回 MA20 下方且动能转弱，则本轮偏多逻辑暂时失效。"])
-    elif market_state["bias"] == "偏空":
-        trading_section = "\n".join(["当前更适合等待反弹承压后的顺势参与，而不是在急跌后继续追空。", "可重点观察反抽 MA5 或 MA20 后的压力确认，若上攻乏力，可考虑轻仓顺势参与。", "若价格重新站回 MA20 上方并伴随动能修复，则偏空逻辑暂时失效。"])
+
+    if bias == "偏多":
+        trading_section = "\n".join([
+            "交易上建议以顺势回调布局为主，不建议高位追涨。",
+            "可重点跟踪回踩 MA5 或 MA20 后的承接情况，若缩量回踩后重新放量上行，可考虑轻仓尝试。",
+            "若收盘重新回落至 MA20 下方，且动能同步转弱，则短线偏多逻辑暂时失效。",
+        ])
+    elif bias == "偏空":
+        trading_section = "\n".join([
+            "交易上建议以反弹承压后的顺势思路为主，不建议在急跌后继续追空。",
+            "可重点跟踪反抽 MA5 或 MA20 后的压力确认，若上攻乏力，可考虑轻仓尝试。",
+            "若价格重新站回 MA20 上方并伴随量能修复，则偏空逻辑暂时失效。",
+        ])
     else:
-        trading_section = "\n".join(["当前更适合以等待为主，先确认区间突破方向。", "若放量突破近几日高点，可转向偏多思路；若跌破近几日低点，可转向偏空思路。", "在均线缠绕和方向不清的阶段，不建议频繁交易或重仓押注单边方向。"])
-    risk_section = "\n".join(["免费数据源可能存在延迟或临时缺失，需注意数据质量风险。", "若消息面快速反转，技术面判断可能被短时间打断。", "本地规则生成的结论适合复盘辅助，不等同于实时投顾服务。", "以上内容仅供复盘交流，不构成投资建议。"])
-    return "\n\n".join(["一、核心结论", core_conclusion, "二、技术面解读", technical_section, "三、基本面与消息面解读", fundamental_section, "四、交易策略建议", trading_section, "五、风险提示", risk_section])
+        trading_section = "\n".join([
+            "交易上以等待为主，重点关注区间上沿与下沿的突破确认。",
+            "若放量突破近几日高点，可转向偏多应对；若跌破近几日低点，可转向偏空应对。",
+            "在均线缠绕、方向不清的阶段，不建议频繁交易或重仓押注单边方向。",
+        ])
+
+    risk_section = "\n".join([
+        "免费数据源可能存在延迟或临时缺失，需注意数据质量风险。",
+        "若消息面快速反转，短线技术判断可能被打断。",
+        "本报告由本地规则自动生成，适合复盘辅助，不等同于实时投顾服务。",
+        "以上内容仅供复盘交流，不构成投资建议。",
+    ])
+
+    return "\n\n".join([
+        headline,
+        subline,
+        "一、今日核心观点",
+        core_view,
+        "二、技术面跟踪",
+        technical_section,
+        "三、基本面与消息面跟踪",
+        fundamental_section,
+        "四、交易思路参考",
+        trading_section,
+        "五、风险提示",
+        risk_section,
+    ])
 
 
 def build_analysis_context(product_name):
@@ -419,8 +483,17 @@ def build_analysis_context(product_name):
     fundamental_text, signals = build_fundamental_text(product_name, config, latest_metrics)
     market_state = evaluate_market_state(latest_metrics, signals)
     strategy_text = build_strategy_text(product_name, latest_metrics, signals, market_state)
-    report_text = build_local_report(product_name, latest_metrics, signals, market_state)
-    return {"product_name": product_name, "technical_text": technical_text, "fundamental_text": fundamental_text, "strategy_text": strategy_text, "report_text": report_text, "latest_metrics": latest_metrics, "signals": signals, "market_state": market_state}
+    report_text = build_local_daily_report(product_name, latest_metrics, signals, market_state)
+    return {
+        "product_name": product_name,
+        "technical_text": technical_text,
+        "fundamental_text": fundamental_text,
+        "strategy_text": strategy_text,
+        "report_text": report_text,
+        "latest_metrics": latest_metrics,
+        "signals": signals,
+        "market_state": market_state,
+    }
 
 
 def refresh_summary(product_name, clear_report=False):
@@ -475,17 +548,17 @@ def render_actions(product_name):
             except Exception as exc:
                 st.error(f"获取失败：{exc}")
     with col2:
-        if st.button("生成本地专业复盘建议", use_container_width=True):
+        if st.button("生成客户日报", use_container_width=True):
             try:
                 ensure_summary(product_name)
                 st.session_state.report_text = st.session_state.analysis_context["report_text"]
-                st.success("已生成本地专业复盘建议。")
+                st.success("已生成客户日报。")
             except Exception as exc:
                 st.error(f"生成失败：{exc}")
     with col3:
-        if st.button("清空复盘建议", use_container_width=True):
+        if st.button("清空客户日报", use_container_width=True):
             st.session_state.report_text = ""
-            st.success("已清空复盘建议。")
+            st.success("已清空客户日报。")
 
 
 def render_text_sections():
@@ -495,17 +568,21 @@ def render_text_sections():
 
 
 def render_report_section():
-    st.subheader("本地专业复盘建议")
+    st.subheader("客户日报")
     if st.session_state.report_text:
         st.markdown(st.session_state.report_text.replace("\n", "  \n"))
     else:
-        st.info("点击“生成本地专业复盘建议”后，这里会显示规则生成的复盘报告。")
+        st.info("点击“生成客户日报”后，这里会显示本地规则生成的日报内容。")
 
 
 def main():
     init_page()
     init_state()
-    product_name = st.selectbox("选择期货品种", options=list(FUTURE_CONFIG.keys()), index=list(FUTURE_CONFIG.keys()).index(st.session_state.selected_product))
+    product_name = st.selectbox(
+        "选择期货品种",
+        options=list(FUTURE_CONFIG.keys()),
+        index=list(FUTURE_CONFIG.keys()).index(st.session_state.selected_product),
+    )
     if product_name != st.session_state.selected_product:
         try:
             with st.spinner("正在切换品种并刷新数据..."):
